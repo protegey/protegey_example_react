@@ -59,7 +59,7 @@ function App() {
         touch: { avgSwipeVelocity: 22, scrollBehaviorScore: 0.8 },
         navigation: { screenSequence: ['login', 'dashboard', 'transfer', 'confirm'] },
       });
-      // "learning" for the first few sessions of any given customer — expected, not an error.
+      // "LEARNING" for the first few sessions of any given customer — expected, not an error.
       append(`behavioral.report() -> status=${result.status}, stepUpRecommended=${result.stepUpRecommended}`);
     } catch (err) {
       append(`behavioral.report() failed: ${(err as Error).message}`);
