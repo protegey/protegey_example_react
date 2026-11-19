@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import { Protegey, ProtegeyApiError } from '@protegey/sdk';
+import type { KycSessionImages } from '@protegey/sdk';
 
 // In a real app, read these from your own env config — never hardcode a production API key.
 const protegey = new Protegey({
@@ -21,6 +22,7 @@ const SESSION_ID = `react-example-session-${Date.now()}`;
 function App() {
   const [visitorId, setVisitorId] = useState<string | null>(null);
   const [kycSessionId, setKycSessionId] = useState<string | null>(null);
+  const [kycImages, setKycImages] = useState<KycSessionImages | null>(null);
   const [log, setLog] = useState<string[]>([]);
 
   const append = (line: string) => setLog((prev) => [...prev, line]);
@@ -57,6 +59,32 @@ function App() {
       );
     } catch (err) {
       append(`transactions.report() failed: ${(err as Error).message}`);
+    }
+  }
+
+  async function recordCashDeposit() {
+    try {
+      // Send your own externalTransactionId so a retry is safe — re-sending it is a 409.
+      const externalTransactionId = `react-example-dep-${Date.now()}`;
+      const result = await protegey.cashDeposits.record({
+        externalTransactionId,
+        externalCustomerId: CUSTOMER_ID,
+        amount: 2_500_000,
+        currency: 'XAF',
+        channel: 'BRANCH',
+        branchId: 'DLA-AKWA',
+        depositorName: 'Demo Depositor',
+      });
+      append(`cashDeposits.record() -> cashDepositId=${result.cashDepositId}, decision=${result.decision}, riskScore=${result.riskScore}, alerts=${result.alerts.length}`);
+
+      // Look it up again by your own reference — amount comes back as a decimal string.
+      const deposit = await protegey.cashDeposits.get(externalTransactionId);
+      append(`cashDeposits.get() -> amount=${deposit.amount} ${deposit.currency}, channel=${deposit.channel}, branchId=${deposit.branchId}`);
+
+      const page = await protegey.cashDeposits.list({ externalCustomerId: CUSTOMER_ID, limit: 10 });
+      append(`cashDeposits.list({ externalCustomerId }) -> total=${page.total}`);
+    } catch (err) {
+      append(`cashDeposits failed: ${describe(err)}`);
     }
   }
 
@@ -143,7 +171,23 @@ function App() {
     try {
       // Polling fallback for the kyc.status_changed webhook.
       const session = await protegey.kyc.getSession(kycSessionId);
-      append(`kyc.getSession() -> status=${session.status}, outcome=${session.outcome}`);
+      // status = the final decision; recommendation = Protegey's own verdict (unchanged by a manual override).
+      append(`kyc.getSession() -> status=${session.status}, outcome=${session.outcome}, recommendation=${session.recommendation}`);
+      // Pre-signed links valid 1 hour, re-issued on every GET — display/download them now, never store them.
+      setKycImages(session.images);
+    } catch (err) {
+      append(`kyc.getSession() failed: ${describe(err)}`);
+    }
+  }
+
+  async function lookupKycByCustomer() {
+    try {
+      // Exact match on your own customer id (unlike `search`, never partial).
+      const page = await protegey.kyc.listSessions({ externalUserId: CUSTOMER_ID });
+      append(`kyc.listSessions({ externalUserId }) -> total=${page.total}`);
+      for (const row of page.data) {
+        append(`  ${row.sessionId} status=${row.status} recommendation=${row.recommendation} selfie=${row.images.selfie ? 'yes' : 'no'}`);
+      }
     } catch (err) {
       append(`kyc.getSession() failed: ${describe(err)}`);
     }
@@ -152,7 +196,7 @@ function App() {
   return (
     <main style={{ fontFamily: 'sans-serif', maxWidth: 640, margin: '2rem auto', padding: '0 1rem' }}>
       <h1>Protegey — React example</h1>
-      <p>Demonstrates every <code>@protegey/sdk</code> module from a plain web app: device intelligence, transaction reporting, alerts, behavioral biometrics, identity verification (KYC) opened in a new tab, business onboarding (KYB), sanctions screening and the shared fraud signal network.</p>
+      <p>Demonstrates every <code>@protegey/sdk</code> module from a plain web app: device intelligence, transaction and cash-deposit reporting, alerts, behavioral biometrics, identity verification (KYC) opened in a new tab, business onboarding (KYB), sanctions screening and the shared fraud signal network.</p>
 
       <div style={{ display: 'flex', gap: '0.5rem', margin: '1rem 0', flexWrap: 'wrap' }}>
         <button onClick={identifyDevice}>Identify device again</button>
@@ -160,11 +204,28 @@ function App() {
         <button onClick={reportBehavioral}>Report a behavioral event</button>
         <button onClick={startKyc}>Verify my identity</button>
         <button onClick={checkKyc}>Check KYC status</button>
+        <button onClick={lookupKycByCustomer}>Find my KYC sessions</button>
+        <button onClick={recordCashDeposit}>Record a cash deposit</button>
         <button onClick={listOpenAlerts}>List open alerts</button>
         <button onClick={inviteBusiness}>Invite a business (KYB, by phone)</button>
         <button onClick={screenName}>Screen a name (sanctions/PEP)</button>
         <button onClick={checkSharedSignal}>Check shared fraud signals</button>
       </div>
+
+      {kycImages && (
+        <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap', marginBottom: '1rem' }}>
+          {(['documentFront', 'documentBack', 'selfie', 'documentFaceCrop'] as const).map((key) => {
+            const image = kycImages[key];
+            if (!image) return null;
+            return (
+              <figure key={key} style={{ margin: 0 }}>
+                <img src={image.url} alt={key} style={{ height: 96, borderRadius: 4 }} />
+                <figcaption style={{ fontSize: 11 }}>{key} (expires {new Date(image.expiresAt).toLocaleTimeString()})</figcaption>
+              </figure>
+            );
+          })}
+        </div>
+      )}
 
       <pre style={{ background: '#f4f4f4', padding: '1rem', borderRadius: 4, whiteSpace: 'pre-wrap' }}>
         {log.length === 0 ? 'Waiting for device.identify()…' : log.join('\n')}

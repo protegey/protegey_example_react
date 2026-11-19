@@ -1,7 +1,7 @@
 # Protegey — React example
 
 Minimal Vite + React + TypeScript app demonstrating every `@protegey/sdk` module in the browser:
-device intelligence, transaction reporting, alerts, behavioral biometrics, identity verification
+device intelligence, transaction and cash-deposit reporting, alerts, behavioral biometrics, identity verification
 (KYC), business onboarding (KYB), sanctions screening and the shared fraud signal network.
 
 On the web, there's no in-app webview — the KYC flow is just a URL, opened in a new tab (or an
@@ -26,7 +26,13 @@ npm run dev
   metrics — `status: "LEARNING"` is expected for a brand-new customer, not an error.
 - "Verify my identity": `protegey.kyc.startSession()`, then opens the returned hosted URL in a new
   tab — the dev decides how (`window.open` here; an iframe or redirect works just as well).
-- "Check KYC status": `protegey.kyc.getSession()` — the polling fallback for the `kyc.status_changed` webhook.
+- "Check KYC status": `protegey.kyc.getSession()` — the polling fallback for the `kyc.status_changed`
+  webhook. Shows `status` (the final decision), `recommendation` (Protegey's own verdict) and the
+  photos from `images` — pre-signed URLs valid **1 hour**, re-issued on every call, so they're
+  displayed right away and never stored.
+- "Find my KYC sessions": `protegey.kyc.listSessions({ externalUserId })` — exact lookup by your own customer id.
+- "Record a cash deposit": `protegey.cashDeposits.record()` with your own `externalTransactionId`
+  (a re-send is a 409), then `cashDeposits.get()` by that reference and `cashDeposits.list({ externalCustomerId })`.
 - "List open alerts": `protegey.alerts.list({ status: "OPEN" })`.
 - "Invite a business (KYB, by phone)": `protegey.kyb.inviteApplicant()` with only a `contactPhone`
   — Protegey sends no email in that case, so the returned `applicationUrl` is what you deliver yourself.
@@ -37,7 +43,7 @@ npm run dev
 Webhook verification (`constructWebhookEvent()`) belongs on your server, never in a browser app —
 see the SDK README.
 
-> Requires `@protegey/sdk` ≥ 0.7.0. If your `package-lock.json` still pins an older commit, run
+> Requires `@protegey/sdk` ≥ 0.8.0. If your `package-lock.json` still pins an older commit, run
 > `npm update @protegey/sdk`.
 
 See `src/App.tsx` — every call annotated.
